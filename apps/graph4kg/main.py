@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import sys
 import time
 import random
 import logging
@@ -226,6 +227,17 @@ def main():
     step = 1
     for epoch in range(args.num_epoch):
         # logging.info(('=' * 10) + 'epoch %d' % epoch + ('=' * 10))
+        if step == 100:
+            paddle.fluid.core.nvprof_start()
+            paddle.fluid.core.nvprof_enable_record_event()
+            paddle.fluid.core.nvprof_nvtx_push(str(step))
+        if step == 110:
+            paddle.fluid.core.nvprof_nvtx_pop()
+            paddle.fluid.core.nvprof_stop()
+            sys.exit()
+        if step > 100 and step < 110:
+            paddle.fluid.core.nvprof_nvtx_pop()
+            paddle.fluid.core.nvprof_nvtx_push(str(step))
         model.train()
         for (h, r, t, neg_ents), all_ents, mode in train_loader:
             timer['sample'] += (time.time() - ts)
