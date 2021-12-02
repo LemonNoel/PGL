@@ -110,6 +110,16 @@ class KGDataset(Dataset):
         else:
             return self._collate_fn(data, 'tail', self._filter_dict['tail'])
 
+    def collate_fn_head(self, data):
+        """Collate_fn_head to corrupt heads.
+        """
+        return self._collate_fn(data, 'head', self._filter_dict['head'])
+
+    def collate_fn_tail(self, data):
+        """Collate_fn_tail to corrupt tails.
+        """
+        return self._collate_fn(data, 'tail', self._filter_dict['tail'])
+
     def _collate_fn(self, data, mode, fl_set):
         h, r, t, weights = np.array(data).T
 
@@ -297,6 +307,30 @@ class TestWikiKG90M(Dataset):
             return h, r, -1, neg_tail
 
 
+class InfiniteBiNegDataLoader:
+    """Iterativly create head and tail corrupted negative samples.
+    """
+    def __init__(self, head_loader, tail_loader):
+        self._head_iter = self._create_iter(head_loader)
+        self._tail_iter = self._create_iter(tail_loader)
+        self._step = 0
+
+    def __next__(self):
+        self._step ^= 1
+        if self._step == 0:
+           return next(self._head_iter)
+        else:
+           return next(self._tail_iter)
+
+    def __iter__(self):
+        return self
+
+    def _create_iter(self, loader):
+        while True:
+            for indexs, embeds, mode in loader:
+                yield indexs, embeds, mode
+
+
 def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None):
     """Construct DataLoader for training, validation and test.
     """
@@ -313,11 +347,19 @@ def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None):
         shuffle=True,
         drop_last=True)
 
-    train_loader = DataLoader(
+    head_loader = DataLoader(
         dataset=train_dataset,
         batch_sampler=train_sampler,
         num_workers=args.num_workers,
-        collate_fn=train_dataset.collate_fn)
+        collate_fn=train_dataset.collate_fn_head)
+
+    tail_loader = DataLoader(
+        dataset=train_dataset,
+        batch_sampler=train_sampler,
+        num_workers=args.num_workers,
+        collate_fn=train_dataset.collate_fn_tail)
+
+    train_loader = InfiniteBiNegDataLoader(head_loader, tail_loader)
 
     if args.valid:
         if args.data_name == 'wikikg90m':
