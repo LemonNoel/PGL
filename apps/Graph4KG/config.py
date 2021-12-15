@@ -85,7 +85,7 @@ class KGEArgParser(ArgumentParser):
             '--model_name',
             default='TransE',
             choices=[
-                'TransE', 'RotatE', 'DistMult', 'ComplEx', 'QuatE', 'OTE'
+                'TransE', 'RotatE', 'DistMult', 'ComplEx', 'QuatE', 'OTE', 'ConvE'
             ],
             help='Knowledge embedding method for training.')
 
@@ -210,6 +210,12 @@ class KGEArgParser(ArgumentParser):
             default=1.,
             help='Percent of used validation triplets.')
 
+        self.data_group.add_argument(
+            '--use_symmetry',
+            action='store_true',
+            help='Use inverse triplets for training. For given (h, r, t), '\
+                'add (t, r + NUM_REL, h) to train dataset if True.')
+
         self.model_group = self.add_argument_group('model optional')
 
         self.model_group.add_argument(
@@ -285,6 +291,60 @@ class KGEArgParser(ArgumentParser):
             type=float,
             default=0.,
             help='Coefficient of the second regularization in QuatE.')
+
+        self.opt_group.add_argument(
+            '--input_drop',
+            type=float,
+            default=1.0,
+            help='Dropout of input embeddings in ConvE.')
+
+        self.opt_group.add_argument(
+            '--hidden_drop',
+            type=float,
+            default=1.0,
+            help='Dropout of hidden embeddings in ConvE.')
+
+        self.opt_group.add_argument(
+            '--feat_drop',
+            type=float,
+            default=1.0,
+            help='Dropout of feature maps in ConvE.')
+
+        self.opt_group.add_argument(
+            '--in_channels',
+            type=int,
+            default=1,
+            help='Number of channels of input embeddings in ConvE.')
+
+        self.opt_group.add_argument(
+            '--out_channels',
+            type=int,
+            default=32,
+            help='Number of channels of output embeddings in ConvE.')
+
+        self.opt_group.add_argument(
+            '--kernel_size',
+            type=int,
+            default=3,
+            help='Kernel size of convolutional neural network in ConvE.')
+
+        self.opt_group.add_argument(
+            '--stride',
+            type=int,
+            default=1,
+            help='Stride size of convolutional neural netwoek in ConvE.')
+
+        self.opt_group.add_argument(
+            '--padding',
+            type=int,
+            default=0,
+            help='The amount of padding applied to inputs in ConvE.')
+
+        self.opt_group.add_argument(
+            '--feat_h',
+            type=int,
+            default=10,
+            help='The height of reshaped input embeddings om ConvE.')
 
         self.train_group = self.add_argument_group('train optional')
         self.train_group.add_argument(
@@ -370,6 +430,23 @@ def prepare_data_config(args):
         args.num_chunks = max(args.batch_size // args.neg_sample_size, 1)
     else:
         args.num_chunks = args.batch_size
+
+    args.feat_w = args.embed_dim // args.feat_h
+    if args.model_name == 'conve':
+        assert(args.feat_w * args.feat_h == args.embed_dim, 'For ConvE, ' \
+            'feat_h should be divisible by embed_dim.')
+
+        hidden_h = (args.feat_h * 2 - args.kernel_size + 2 * args.padding) // args.stride + 1
+        hidden_w = (args.feat_w - args.kernel_size + 2 * args.padding) // args.stride + 1
+
+        args.hidden_size = hidden_h * hidden_w * args.out_channels
+
+    if args.data_name in {'wikikg2', 'wikikg90m'}:
+        args.data_mode = args.data_name
+    elif args.model_name in {'conve'}:
+        args.data_mode = 'cls'
+    else:
+        args.data_mode = 'hrt'
 
     return args
 

@@ -18,8 +18,9 @@ import time
 import warnings
 from collections import defaultdict
 
-import paddle
 import numpy as np
+import paddle
+from paddle.nn import BCELoss
 from paddle.optimizer.lr import StepDecay
 
 from dataset.reader import read_trigraph
@@ -57,46 +58,29 @@ def main():
         model.start_async_update()
 
     if len(model.parameters()) > 0:
-        if args.optimizer == 'adam':
-            optim_func = paddle.optimizer.Adam
-        elif args.optimizer == 'adagrad':
-            optim_func = paddle.optimizer.Adagrad
-        else:
-            errors = 'Optimizer {} not supported!'.format(args.optimizer)
-            raise ValueError(errors)
+        learning_rate = args.lr
         if args.scheduler_interval > 0:
-            scheduler = StepDecay(
+            learning_rate = StepDecay(
                 learning_rate=args.lr,
                 step_size=args.scheduler_interval,
                 gamma=0.5,
                 last_epoch=-1,
                 verbose=True)
-            optimizer = optim_func(
-                learning_rate=scheduler,
-                epsilon=1e-10,
-                parameters=model.parameters())
-        else:
-            optimizer = optim_func(
-                learning_rate=args.lr,
-                epsilon=1e-10,
-                parameters=model.parameters())
+        optimizer = paddle.optimizer.Adam(
+            learning_rate=learning_rate,
+            epsilon=1e-10,
+            parameters=model.parameters())
     else:
         warnings.warn('There is no model parameter on gpu, optimizer is None.',
                       RuntimeWarning)
         optimizer = None
 
-    loss_func = LossFunction(
-        name=args.loss_type,
-        pairwise=args.pairwise,
-        margin=args.margin,
-        neg_adv_spl=args.neg_adversarial_sampling,
-        neg_adv_temp=args.adversarial_temperature)
+    loss_func = BCELoss()
 
     train_loader, valid_loader, test_loader = create_dataloaders(
         trigraph,
         args,
-        filter_dict=filter_dict if use_filter_set else None,
-        shared_ent_path=model.shared_ent_path if args.mix_cpu_gpu else None)
+        mode='cls')
 
     timer = defaultdict(int)
     log = defaultdict(int)
@@ -104,41 +88,16 @@ def main():
     step = 1
     stop = False
     for epoch in range(args.num_epoch):
-        for indexes, prefetch_embeddings, mode in train_loader:
-            h, r, t, neg_ents, all_ents = indexes
-            all_ents_emb, rel_emb, weights = prefetch_embeddings
-
-            if rel_emb is not None:
-                rel_emb.stop_gradient = False
-            if all_ents_emb is not None:
-                all_ents_emb.stop_gradient = False
-
+        for ent_index, rel_index, label in train_loader:
             timer['sample'] += (time.time() - ts)
 
             ts = time.time()
-            h_emb, r_emb, t_emb, neg_emb, mask = model.prepare_inputs(
-                indexes, prefetch_embeddings, mode)
-            pos_score = model.forward(h_emb, r_emb, t_emb)
+            ent_emb, rel_emb, cand_emb = model.prepare_inputs(
+                [ent_index, rel_index], data_mode='cls')
+            score = model.forward(ent_emb, rel_emb, cand_emb)
 
-            if mode == 'head':
-                neg_score = model.get_neg_score(t_emb, r_emb, neg_emb, True,
-                                                mask)
-            elif mode == 'tail':
-                neg_score = model.get_neg_score(h_emb, r_emb, neg_emb, False,
-                                                mask)
-            else:
-                raise ValueError('Unsupported negative mode {}.'.format(mode))
-            neg_score = neg_score.reshape([args.batch_size, -1])
-
-            loss = loss_func(pos_score, neg_score, weights)
+            loss = loss_func(score, label)
             log['loss'] += loss.numpy()[0]
-
-            if args.use_embedding_regularization:
-                reg_loss = model.get_regularization(h_emb, r_emb, t_emb,
-                                                    neg_emb)
-                log['reg'] += reg_loss.numpy()[0]
-
-                loss = loss + reg_loss
             timer['forward'] += (time.time() - ts)
 
             ts = time.time()
@@ -152,10 +111,8 @@ def main():
 
             if args.mix_cpu_gpu:
                 ent_trace, rel_trace = model.create_trace(
-                    all_ents, all_ents_emb, r, r_emb)
+                    paddle.arange(trigraph.num_ents), cand_emb, rel, rel_emb)
                 model.step(ent_trace, rel_trace)
-            else:
-                model.step()
 
             timer['update'] += (time.time() - ts)
 

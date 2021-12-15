@@ -171,31 +171,64 @@ class TriGraph(object):
         np.save(os.path.join(path, 'ent_feat.npy'), self._ent_feat)
         np.save(os.path.join(path, 'rel_feat.npy'), self._rel_feat)
 
+    def add_symmetric_train_triplets(self):
+        """
+        For train triplet (h, r, t), add (t, r + NUM_REL, h) to training dataset.
+        """
+        h, r, t = self._train.T
+        re_h = np.concatenate([h, t])
+        re_t = np.concatenate([t, h])
+        re_r = np.concatenate([r, r + self._num_rels])
+        self._num_rels = self._num_rels * 2
+        self._train = np.stack([h, r, t]).T
+
     @property
-    def true_tails_for_head_rel(self):
+    def true_tails_for_head_rel(self, mode='all'):
         """
         Get valid tail entities for a pair of (head, reltion) in KGs.
+
+        Args:
+            mode (str, optional): The triplets to count true tails.
+                'all': Count from train, dev and test datasets.
+                'train': Count from train dataset.
 
         Return:
             dict: The dictionary of valid tails for all existing head-relation pairs.
         """
+        if mode == 'all':
+            triplets = self.triplets
+        elif mode == 'train':
+            triplets = self.train
+        else:
+            raise ValueError('Invalid mode to count true tails for (head, rel) pair.')
         true_pairs = defaultdict(set)
-        for h, r, t in self.triplets:
+        for h, r, t in triplets:
             true_pairs[(h, r)].add(t)
         for k, v in true_pairs.items():
             true_pairs[k] = np.array(list(v), dtype='int32')
         return true_pairs
 
     @property
-    def true_heads_for_tail_rel(self):
+    def true_heads_for_tail_rel(self, mode='all'):
         """
         Get valid head entities for a pair of (tail, relation) in KGs.
+
+        Args:
+            mode (str, optional): The triplets to count true heads.
+                'all': Count from train, dev and test datasets.
+                'train': Count from train dataset.
 
         Return:
             dict: The dictionary of valid heads for all existing tail-relation pairs.
         """
+        if mode == 'all':
+            triplets = self.triplets
+        elif mode == 'train':
+            triplets = self.train
+        else:
+            raise ValueError('Invalid mode to count true heads for (tail, rel) pair')
         true_pairs = defaultdict(set)
-        for h, r, t in self.triplets:
+        for h, r, t in triplets:
             true_pairs[(t, r)].add(h)
         for k, v in true_pairs.items():
             true_pairs[k] = np.array(list(v), dtype='int32')

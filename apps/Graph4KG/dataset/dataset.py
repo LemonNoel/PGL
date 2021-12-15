@@ -23,6 +23,80 @@ from paddle.io import DataLoader, DistributedBatchSampler
 from utils import timer_wrapper
 
 
+def group_index(data):
+    """
+    Function to reindex elements in data.
+    Args:
+        data (list): A list of int values.
+    Return:
+        function: The reindex function to apply to a list.
+        np.ndarray: Unique elements in data.
+    """
+    uniques = np.unique(np.concatenate(data))
+    reindex_dict = dict([(x, i) for i, x in enumerate(uniques)])
+    reindex_func = np.vectorize(lambda x: reindex_dict[x])
+    return reindex_func, uniques
+
+
+def uniform_sampler(k, cand, filter_set=None):
+    """
+    Sampling negative samples uniformly.
+
+    Args:
+        k (int): Number of sampled elements.
+        cand (list or int): The list of elements to sample. The int
+            value X denotes sampling integers from [0, X).
+        filter_set (list): The list of invalid int values.
+    """
+    rng = default_rng()
+    if filter_set is not None:
+        new_e_list = []
+        new_e_num = 0
+        while new_e_num < k:
+            new_e = rng.choice(cand, 2 * k, replace=True)
+            mask = np.in1d(new_e, filter_set, invert=True)
+            new_e = new_e[mask]
+            new_e_list.append(new_e)
+            new_e_num += len(new_e)
+        new_e = np.concatenate(new_e_list)[:k]
+    else:
+        new_e = rng.choice(cand, k, replace=True)
+    return new_e
+
+
+class KGCLSDataset(Dataset):
+    """
+    Dataset for knowedge graphs formated as inputs = [entity, relation, candidates],
+    labels = [1, 1, ..., 0], where 1 denotes positive triplets while 0 is negatives.
+
+    Args:
+        trigraph (trigraph in Graph4KG/dataset/trigraph.py):
+            The trigraph which stores all triplets in dataset.
+        use_symmetry (bool):
+            Whether add symmetric triplets to training dataset.
+    """
+    def __init__(self,
+                 trigraph,
+                 use_symmetry):
+        self._num_ents = trigraph.num_ents
+        if use_symmetry:
+            trigraph.add_symmetric_train_triplets()
+
+        self._data = {}
+        self._data.update(trigraph.true_tails_for_head_rel)
+        self._data.update(trigraph.true_heads_for_tail_rel)
+        self._data = list(self._data.items())
+
+    def __len__(self):
+        return len(self._data)
+
+    def __getitem__(self, index):
+        (ent, rel), cand = self._data[index]
+        label = np.zeros(self._num_ents).astype(np.float32)
+        label[cand] = 1
+        return ent, rel, label
+
+
 class KGDataset(Dataset):
     """
     Dataset for knowledge graphs
@@ -115,18 +189,18 @@ class KGDataset(Dataset):
 
         if self._neg_sample_type == 'batch':
             neg_size = self._neg_sample_size * h.shape[0]
-            reindex_func, all_ents = self.group_index([h, t])
-            neg_ents = self.uniform_sampler(neg_size, all_ents)
+            reindex_func, all_ents = group_index([h, t])
+            neg_ents = uniform_sampler(neg_size, all_ents)
 
         elif self._neg_sample_type == 'full':
             neg_size = self._neg_sample_size * h.shape[0]
-            neg_ents = self.uniform_sampler(neg_size, self._num_ents)
-            reindex_func, all_ents = self.group_index([h, t, neg_ents])
+            neg_ents = uniform_sampler(neg_size, self._num_ents)
+            reindex_func, all_ents = group_index([h, t, neg_ents])
 
         elif self._neg_sample_type == 'chunk':
             neg_size = max(h.shape[0], self._neg_sample_size)
-            neg_ents = self.uniform_sampler(neg_size, self._num_ents)
-            reindex_func, all_ents = self.group_index([h, t, neg_ents])
+            neg_ents = uniform_sampler(neg_size, self._num_ents)
+            reindex_func, all_ents = group_index([h, t, neg_ents])
 
         else:
             raise ValueError('neg_sample_type %s not supported!' %
@@ -163,46 +237,6 @@ class KGDataset(Dataset):
         weights = np.sqrt(1. / weights)
         return weights
 
-    @staticmethod
-    def group_index(data):
-        """
-        Function to reindex elements in data.
-        Args:
-            data (list): A list of int values.
-        Return:
-            function: The reindex function to apply to a list.
-            np.ndarray: Unique elements in data.
-        """
-        uniques = np.unique(np.concatenate(data))
-        reindex_dict = dict([(x, i) for i, x in enumerate(uniques)])
-        reindex_func = np.vectorize(lambda x: reindex_dict[x])
-        return reindex_func, uniques
-
-    @staticmethod
-    def uniform_sampler(k, cand, filter_set=None):
-        """
-        Sampling negative samples uniformly.
-
-        Args:
-            k (int): Number of sampled elements.
-            cand (list or int): The list of elements to sample. The int
-                value X denotes sampling integers from [0, X).
-            filter_set (list): The list of invalid int values.
-        """
-        rng = default_rng()
-        if filter_set is not None:
-            new_e_list = []
-            new_e_num = 0
-            while new_e_num < k:
-                new_e = rng.choice(cand, 2 * k, replace=True)
-                mask = np.in1d(new_e, filter_set, invert=True)
-                new_e = new_e[mask]
-                new_e_list.append(new_e)
-                new_e_num += len(new_e)
-            new_e = np.concatenate(new_e_list)[:k]
-        else:
-            new_e = rng.choice(cand, k, replace=True)
-        return new_e
 
 
 class TestKGDataset(Dataset):
@@ -297,27 +331,37 @@ class TestWikiKG90M(Dataset):
             return h, r, -1, neg_tail
 
 
-def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None):
+def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None, mode='hrt'):
     """Construct DataLoader for training, validation and test.
     """
-    train_dataset = KGDataset(
-        triplets=trigraph.train_triplets,
-        num_ents=trigraph.num_ents,
-        args=args,
-        filter_dict=filter_dict if args.filter_sample else None,
-        shared_path={'ent': shared_ent_path} if args.mix_cpu_gpu else None)
+    if mode == 'cls':
+        train_dataset = KGCLSDataset(trigraph, args.use_symmetry)
+        train_loader = DataLoader(
+            dataset=train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            drop_last=True,
+            num_workers=args.num_workers)
+    elif mode == 'hrt':
+        train_dataset = KGDataset(
+            triplets=trigraph.train_triplets,
+            num_ents=trigraph.num_ents,
+            args=args,
+            filter_dict=filter_dict if args.filter_sample else None,
+            shared_path={'ent': shared_ent_path} if args.mix_cpu_gpu else None)
+        train_sampler = DistributedBatchSampler(
+            train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            drop_last=True)
 
-    train_sampler = DistributedBatchSampler(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        drop_last=True)
-
-    train_loader = DataLoader(
-        dataset=train_dataset,
-        batch_sampler=train_sampler,
-        num_workers=args.num_workers,
-        collate_fn=train_dataset.collate_fn)
+        train_loader = DataLoader(
+            dataset=train_dataset,
+            batch_sampler=train_sampler,
+            num_workers=args.num_workers,
+            collate_fn=train_dataset.collate_fn)
+    else:
+        raise ValueError('Dataloader mode {} is invalid.'.format(mode))
 
     if args.valid:
         if args.data_name == 'wikikg90m':

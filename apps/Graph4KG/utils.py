@@ -209,8 +209,14 @@ def evaluate(model,
             output = {'h,r->t': {}, 't,r->h': {}, 'average': {}}
 
             for h, r, t in tqdm(loader):
-                t_score = model.predict(h, r, mode='tail')
-                h_score = model.predict(t, r, mode='head')
+                if data_mode == 'hrt':
+                    t_score = model.predict(h, r, mode='tail')
+                    h_score = model.predict(t, r, mode='head')
+                elif data_mode == 'cls':
+                    t_score = model.predict(h, r, mode='tail_cls')
+                    h_score = model.predict(t, r, mode='head_cls')
+                else:
+                    raise ValueError('Invalid evaluation mode {}'.format(data_mode))
 
                 if filter_dict is not None:
                     h_filter_list = [

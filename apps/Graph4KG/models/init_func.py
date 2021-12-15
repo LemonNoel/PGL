@@ -31,6 +31,8 @@ class InitFunction(object):
 
         if name == 'general_uniform':
             weight = self.general_uniform()
+        elif name == 'xavier_normal':
+            weight = self.xavier_normal()
         elif name == 'quaternion_init':
             weight = self.quaternion_initialization()
         elif name == 'standard_uniform':
@@ -63,6 +65,14 @@ class InitFunction(object):
         init_value = (self.args.gamma + embed_epsilon) / self.embed_dim
         weight_shape = (self.num_embed, self.embed_dim)
         weight = uniform(-init_value, init_value, weight_shape)
+        return weight
+
+    def xavier_normal(self):
+        """Xavier normal initialization method.
+        """
+        std = np.sqrt(2.0 / float(self.num_embed + self.embed_dim))
+        weight_shape = (self.num_embed, self.embed_dim)
+        weight = np.random.normal(0, std, weight_shape).astype(np.float32)
         return weight
 
     def quaternion_initialization(self):

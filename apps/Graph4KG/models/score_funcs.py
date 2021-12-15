@@ -482,3 +482,52 @@ class OTEScore(ScoreFunc):
             embeds = embeds.reshape([-1, self.num_elem, self.num_elem])
             embeds = embeds.transpose([0, 2, 1]).reshape(embed_shape)
         return embeds
+
+
+class ConvEScore(nn.Layer):
+    """
+    Convolutional 2D Knowledge Graph Embeddings.
+    https://arxiv.org/abs/1707.01476
+    """
+    def __init__(self, args):
+        super(ConvEScore, self).__init__()
+        self.input_drop = nn.Dropout(args.input_drop)
+        self.hidden_drop = nn.Dropout(args.hidden_drop)
+        self.feature_drop = nn.Dropout2D(args.feat_drop)
+        self.loss = nn.BCELoss()
+        self.feat_h = args.feat_h
+        self.feat_w = args.feat_w
+
+        self.conv_net = nn.Conv2D(
+                            args.in_channels,
+                            args.out_channels,
+                            (args.kernel_size, args.kernel_size),
+                            args.stride,
+                            args.padding)
+        self.bn0 = nn.BatchNorm2D(args.in_channels)
+        self.bn1 = nn.BatchNorm2D(args.out_channels)
+        self.bn2 = nn.BatchNorm1D(args.embed_dim)
+        self.fc = nn.Linear(args.hidden_size, args.embed_dim)
+
+    def forward(self, ent_emb, rel_emb, cand_emb):
+        ent_emb = ent_emb.reshape([-1, 1, self.feat_h, self.feat_w])
+        rel_emb = rel_emb.reshape([-1, 1, self.feat_h, self.feat_w])
+        stacked_inputs = paddle.concat([ent_emb, rel_emb], axis=2)
+
+        stacked_inputs = self.bn0(stacked_inputs)
+        x = self.input_drop(stacked_inputs)
+        x = self.conv_net(x)
+        x = self.bn1(x)
+        x = nn.functional.relu(x)
+        x = self.feature_drop(x)
+        x = x.reshape([x.shape[0], -1])
+        x = self.fc(x)
+        x = self.hidden_drop(x)
+        x = self.bn2(x)
+        x = nn.functional.relu(x)
+        x = paddle.mm(x, paddle.transpose(cand_emb, [1, 0]))
+        pred = nn.functional.sigmoid(x)
+
+        return pred
+
+

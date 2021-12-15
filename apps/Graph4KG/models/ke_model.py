@@ -23,7 +23,7 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 
 from pgl.utils.shared_embedding import SharedEmbedding
-from models.score_funcs import TransEScore, RotatEScore, DistMultScore, ComplExScore, QuatEScore, OTEScore
+from models.score_funcs import TransEScore, RotatEScore, DistMultScore, ComplExScore, QuatEScore, OTEScore, ConvEScore
 from models.init_func import InitFunction
 from utils import uniform, timer_wrapper
 
@@ -110,64 +110,60 @@ class KGEModel(nn.Layer):
             self.rel_embedding.eval()
 
     def prepare_inputs(self,
-                       h_index,
-                       r_index,
-                       t_index,
-                       all_ent_index,
-                       neg_ent_index=None,
-                       ent_emb=None,
-                       rel_emb=None,
+                       indexs,
+                       embeds=None,
                        mode='tail',
-                       args=None):
+                       data_mode='hrt'):
         """ Load embeddings of inputs.
         """
-        if ent_emb is not None:
-            if self._use_feat and self._ent_feat is not None:
-                ent_feat = paddle.to_tensor(self._ent_feat[all_ent_index.numpy(
-                )].astype('float32'))
-                ent_emb = self.trans_ent(ent_feat, ent_emb)
+        if data_mode == 'cls':
+            ent_index, rel_index = indexs
+            cand_emb = self._get_ent_embedding(paddle.arange(self._num_ents))
+            ent_emb = F.embedding(ent_index, cand_emb)
+            rel_emb = self._get_rel_embedding(rel_index)
+
+            return ent_emb, rel_emb, cand_emb
+
+        elif data_mode == 'hrt':
+            h_index, r_index, t_index, neg_ent_index, all_ent_index = indexs
+            ent_emb, rel_emb, _ = embeds
+            ent_emb = self._get_ent_embedding(all_ent_index, ent_emb)
+            pos_r = self._get_rel_embedding(r_index, rel_emb)
+
+            pos_h = F.embedding(h_index, ent_emb)
+            pos_t = F.embedding(t_index, ent_emb)
+
+            mask = None
+            if neg_ent_index is not None:
+                neg_ent_emb = F.embedding(neg_ent_index, ent_emb)
+                neg_ent_emb = paddle.reshape(neg_ent_emb,
+                                             (self._num_chunks, -1, self._ent_dim))
+                if self._args.neg_deg_sample:
+                    if mode == 'head':
+                        pos_emb = paddle.reshape(pos_h, (self._num_chunks, -1,
+                                                         self._ent_dim))
+                    else:
+                        pos_emb = paddle.reshape(pos_t, (self._num_chunks, -1,
+                                                         self._ent_dim))
+                    chunk_size = pos_emb.shape[1]
+                    neg_sample_size = neg_ent_emb.shape[1]
+                    neg_ent_emb = paddle.concat([pos_emb, neg_ent_emb], axis=1)
+                    mask = paddle.ones(
+                        [
+                            self._num_chunks,
+                            chunk_size * (neg_sample_size + chunk_size)
+                        ],
+                        dtype='float32')
+                    neg_sample_size = chunk_size + neg_sample_size
+                    mask[:, 0::(neg_sample_size + 1)] = 0.
+                    mask = paddle.reshape(mask, [self._num_chunks, chunk_size, -1])
+            else:
+                neg_ent_emb = None
+
+            return pos_h, pos_r, pos_t, neg_ent_emb, mask
+
         else:
-            ent_emb = self._get_ent_embedding(all_ent_index)
-
-        if rel_emb is not None:
-            if self._use_feat and self._rel_feat is not None:
-                rel_feat = paddle.to_tensor(self._rel_feat[r_index.numpy()]
-                                            .astype('float32'))
-                pos_r = self.trans_rel(rel_feat, rel_emb)
-        else:
-            pos_r = self._get_rel_embedding(r_index)
-
-        pos_h = F.embedding(h_index, ent_emb)
-        pos_t = F.embedding(t_index, ent_emb)
-
-        mask = None
-        if neg_ent_index is not None:
-            neg_ent_emb = F.embedding(neg_ent_index, ent_emb)
-            neg_ent_emb = paddle.reshape(neg_ent_emb,
-                                         (self._num_chunks, -1, self._ent_dim))
-            if args.neg_deg_sample:
-                if mode == 'head':
-                    pos_emb = paddle.reshape(pos_h, (self._num_chunks, -1,
-                                                     self._ent_dim))
-                else:
-                    pos_emb = paddle.reshape(pos_t, (self._num_chunks, -1,
-                                                     self._ent_dim))
-                chunk_size = pos_emb.shape[1]
-                neg_sample_size = neg_ent_emb.shape[1]
-                neg_ent_emb = paddle.concat([pos_emb, neg_ent_emb], axis=1)
-                mask = paddle.ones(
-                    [
-                        self._num_chunks,
-                        chunk_size * (neg_sample_size + chunk_size)
-                    ],
-                    dtype='float32')
-                neg_sample_size = chunk_size + neg_sample_size
-                mask[:, 0::(neg_sample_size + 1)] = 0.
-                mask = paddle.reshape(mask, [self._num_chunks, chunk_size, -1])
-        else:
-            neg_ent_emb = None
-
-        return pos_h, pos_r, pos_t, neg_ent_emb, mask
+            raise ValueError('The input format {} is unknown.'.format(data_mode))
 
     def forward(self, h_emb, r_emb, t_emb):
         """Compute scores of triplets.
@@ -233,29 +229,35 @@ class KGEModel(nn.Layer):
         """Compute scores of given candidates.
         """
         self.set_eval_mode()
+        ent_emb = self._get_ent_embedding(ent)
         if cand is None:
-            cand_emb = paddle.to_tensor(self.ent_embedding.weight).unsqueeze(0)
-            if self._use_feat:
-                cand_feat = paddle.to_tensor(self._ent_feat.astype('float32'))
-                cand_emb = self.trans_ent(cand_feat, cand_emb)
-            cand_emb = cand_emb.tile([ent.shape[0], 1, 1])
+            cand_emb = self._get_ent_embedding(paddle.arange(self._num_ents))
         else:
             num_cand = cand.shape[1]
             cand_emb = self._get_ent_embedding(cand.reshape([-1, ]))
             cand_emb = cand_emb.reshape([-1, num_cand, self._ent_dim])
 
-        ent_emb = self._get_ent_embedding(ent)
-        rel_emb = self._get_rel_embedding(rel)
-        ent_emb = paddle.unsqueeze(ent_emb, axis=1)
-        rel_emb = paddle.unsqueeze(rel_emb, axis=1)
+        if mode in {'head', 'tail'}:
+            rel_emb = self._get_rel_embedding(rel)
+            cand_emb = cand_emb.unsqueeze(0).tile([ent.shape[0], 1, 1])
+            ent_emb = paddle.unsqueeze(ent_emb, axis=1)
+            rel_emb = paddle.unsqueeze(rel_emb, axis=1)
 
-        if mode == 'tail':
-            scores = self._score_func.get_neg_score(ent_emb, rel_emb, cand_emb,
-                                                    False)
-        else:
-            scores = self._score_func.get_neg_score(cand_emb, rel_emb, ent_emb,
-                                                    True)
-        scores = paddle.squeeze(scores, axis=1)
+            if mode == 'tail':
+                scores = self._score_func.get_neg_score(ent_emb, rel_emb,
+                                                    cand_emb, False)
+            else:
+                scores = self._score_func.get_neg_score(cand_emb, rel_emb,
+                                                    ent_emb, True)
+            scores = paddle.squeeze(scores, axis=1)
+
+        elif mode in {'head_cls', 'tail_cls'}:
+            if mode == 'tail_cls':
+                rel_emb = self._get_rel_embedding(rel + self._num_rels)
+            else:
+                rel_emb = self._get_rel_embedding(rel)
+            scores = self._score_func(ent_emb, rel_emb, cand_emb)
+
         return scores
 
     def save(self, save_path):
@@ -333,17 +335,19 @@ class KGEModel(nn.Layer):
         if self._rel_emb_on_cpu:
             self.rel_embedding.finish_async_update()
 
-    def _get_ent_embedding(self, index):
-        emb = self.ent_embedding(index)
-        if self._use_feat:
+    def _get_ent_embedding(self, index, emb=None):
+        if emb is None:
+            emb = self.ent_embedding(index)
+        if self._use_feat and self._ent_feat is not None:
             feat = paddle.to_tensor(self._ent_feat[index.numpy()].astype(
                 'float32'))
             emb = self.trans_ent(feat, emb)
         return emb
 
-    def _get_rel_embedding(self, index):
-        emb = self.rel_embedding(index)
-        if self._use_feat:
+    def _get_rel_embedding(self, index, emb=None):
+        if emb is None:
+            emb = self.rel_embedding(index)
+        if self._use_feat and self._rel_feat is not None:
             feat = paddle.to_tensor(self._rel_feat[index.numpy()].astype(
                 'float32'))
             emb = self.trans_rel(feat, emb)
@@ -360,6 +364,11 @@ class KGEModel(nn.Layer):
             ent_weight = self._init_func('ote_entity_uniform', self._num_ents,
                                          self._ent_dim)
             rel_weight = self._init_func('ote_scale_init', self._num_rels,
+                                         self._rel_dim)
+        elif self._model_name == 'conve':
+            ent_weight = self._init_func('xavier_normal', self._num_ents,
+                                         self._ent_dim)
+            rel_weight = self._init_func('xavier_normal', self._num_rels,
                                          self._rel_dim)
         else:
             ent_weight = self._init_func('general_uniform', self._num_ents,
@@ -441,6 +450,8 @@ class KGEModel(nn.Layer):
             score_func = QuatEScore(self._num_ents)
         elif model_name == 'ote':
             score_func = OTEScore(args.gamma, args.ote_size, args.ote_scale)
+        elif model_name == 'conve':
+            score_func = ConvEScore(args)
         else:
             raise ValueError('Score function %s not implemented!' % model_name)
         return score_func
