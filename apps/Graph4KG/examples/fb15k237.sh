@@ -31,6 +31,11 @@ python -u train.py --model_name OTE --data_name FB15k-237 --data_path $DATA_PATH
 --batch_size 512 --log_interval 1000 --neg_sample_type 'chunk' --neg_sample_size 256 --max_steps 250000 \
 --embed_dim 400 --gamma 15.0 -adv -a 0.5 --ote_scale 2 --ote_size 20 --print_on_screen --test --filter_eval --lr 0.002 --optimizer adam
 
+# ConvE
+python -u cls_train.py --model_name ConvE --data_name FB15k-237 --data_path $DATA_PATH --save_path output/conve_fb237_sgpu \
+--batch_size 128 --log_interval 100 --num_epoch 1000 --embed_dim 200 --feat_h 20 --print_on_screen --test --filter_eval --lr 0.003 \
+--input_drop 0.2 --hidden_drop 0.3 --feat_drop 0.2 --valid --eval_interval 5000 --use_symmetry
+
 ## Mix CPU-GPU
 
 # TransE
@@ -61,3 +66,8 @@ python -u train.py --model_name RotatE --data_name FB15k-237 --data_path $DATA_P
 python -u train.py --model_name OTE --data_name FB15k-237 --data_path $DATA_PATH --save_path output/ote_fb237_mgpu \
 --batch_size 512 --log_interval 1000 --neg_sample_type 'chunk' --neg_sample_size 256 --max_steps 250000 \
 --embed_dim 400 --gamma 15.0 -adv -a 0.5 --ote_scale 2 --ote_size 20 --print_on_screen --test --filter_eval --lr 0.002 --optimizer adam --async_update --mix_cpu_gpu
+
+# ConvE
+python -u cls_train.py --model_name ConvE --data_name FB15k-237 --data_path $DATA_PATH --save_path output/conve_fb237_mgpu \
+--batch_size 128 --log_interval 100 --num_epoch 1000 --embed_dim 200 --feat_h 20 --print_on_screen --test --filter_eval --lr 0.003 --cpu_lr 0.003 \
+--input_drop 0.2 --hidden_drop 0.3 --feat_drop 0.2 --valid --eval_interval 1000 --use_symmetry --mix_cpu_gpu --async_update

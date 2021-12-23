@@ -103,7 +103,7 @@ def main():
 
             if args.mix_cpu_gpu:
                 ent_trace, rel_trace = model.create_trace(
-                    paddle.arange(trigraph.num_ents), cand_emb, rel, rel_emb)
+                    paddle.arange(trigraph.num_ents), cand_emb, rel_index, rel_emb)
                 model.step(ent_trace, rel_trace)
             else:
                 model.step()
