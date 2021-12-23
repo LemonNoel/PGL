@@ -45,8 +45,8 @@ def main():
     use_filter_set = args.filter_sample or args.filter_eval or args.weighted_loss
     if use_filter_set:
         filter_dict = {
-            'head': trigraph.true_heads_for_tail_rel,
-            'tail': trigraph.true_tails_for_head_rel
+            'head': trigraph.true_heads_for_tail_rel(),
+            'tail': trigraph.true_tails_for_head_rel()
         }
     else:
         filter_dict = None

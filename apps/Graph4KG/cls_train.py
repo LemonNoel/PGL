@@ -40,15 +40,14 @@ def main():
     set_logger(args)
 
     trigraph = read_trigraph(args.data_path, args.data_name)
+    if args.use_symmetry:
+        trigraph.add_symmetric_train_triplets()
     if args.valid_percent < 1:
         trigraph.sampled_subgraph(args.valid_percent, dataset='valid')
 
     use_filter_set = args.filter_sample or args.filter_eval or args.weighted_loss
     if use_filter_set:
-        filter_dict = {
-            'head': trigraph.true_heads_for_tail_rel,
-            'tail': trigraph.true_tails_for_head_rel
-        }
+        filter_dict = trigraph.true_cands_for_ent_rel()
     else:
         filter_dict = None
 
@@ -58,16 +57,8 @@ def main():
         model.start_async_update()
 
     if len(model.parameters()) > 0:
-        learning_rate = args.lr
-        if args.scheduler_interval > 0:
-            learning_rate = StepDecay(
-                learning_rate=args.lr,
-                step_size=args.scheduler_interval,
-                gamma=0.5,
-                last_epoch=-1,
-                verbose=True)
         optimizer = paddle.optimizer.Adam(
-            learning_rate=learning_rate,
+            learning_rate=args.lr,
             epsilon=1e-10,
             parameters=model.parameters())
     else:
@@ -90,13 +81,17 @@ def main():
     for epoch in range(args.num_epoch):
         for ent_index, rel_index, label in train_loader:
             timer['sample'] += (time.time() - ts)
+            model.set_train_mode()
+            label = ((1.0 - args.label_smoothing) * label) + (1.0 / label.shape[1])
 
             ts = time.time()
             ent_emb, rel_emb, cand_emb = model.prepare_inputs(
                 [ent_index, rel_index], data_mode='cls')
+
             score = model.forward(ent_emb, rel_emb, cand_emb)
 
             loss = loss_func(score, label)
+
             log['loss'] += loss.numpy()[0]
             timer['forward'] += (time.time() - ts)
 
@@ -105,15 +100,17 @@ def main():
             timer['backward'] += (time.time() - ts)
 
             ts = time.time()
-            if optimizer is not None:
-                optimizer.step()
-                optimizer.clear_grad()
 
             if args.mix_cpu_gpu:
                 ent_trace, rel_trace = model.create_trace(
                     paddle.arange(trigraph.num_ents), cand_emb, rel, rel_emb)
                 model.step(ent_trace, rel_trace)
+            else:
+                model.step()
 
+            if optimizer is not None:
+                optimizer.step()
+                optimizer.clear_grad()
             timer['update'] += (time.time() - ts)
 
             if args.log_interval > 0 and (step + 1) % args.log_interval == 0:
@@ -124,15 +121,13 @@ def main():
                 t_step = time.time()
 
             if args.valid and (step + 1) % args.eval_interval == 0:
+                model.set_eval_mode()
                 evaluate(
                     model,
                     valid_loader,
                     'valid',
                     filter_dict if args.filter_eval else None,
                     data_mode=args.data_mode)
-
-            if args.scheduler_interval > 0 and step % args.scheduler_interval == 0:
-                scheduler.step()
 
             step += 1
             if args.save_interval > 0 and step % args.save_interval == 0:

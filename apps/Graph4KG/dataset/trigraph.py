@@ -180,9 +180,23 @@ class TriGraph(object):
         re_t = np.concatenate([t, h])
         re_r = np.concatenate([r, r + self._num_rels])
         self._num_rels = self._num_rels * 2
-        self._train = np.stack([h, r, t]).T
+        self._train = np.stack([re_h, re_r, re_t]).T
 
-    @property
+    def true_cands_for_ent_rel(self):
+        """
+        Get valid candidate entities for a pair of either (head, relation) or
+        (tail, relation + NUM_REL) in KGs.
+
+        Return:
+            dict: The dictionary of valid candidate for all (ent, rel) pairs.
+        """
+        true_pairs = defaultdict(set)
+        for h, r, t in self.cls_triplets:
+            true_pairs[(h, r)].add(t)
+        for k, v in true_pairs.items():
+            true_pairs[k] = np.array(list(v), dtype='int32')
+        return true_pairs
+
     def true_tails_for_head_rel(self, mode='all'):
         """
         Get valid tail entities for a pair of (head, reltion) in KGs.
@@ -198,7 +212,7 @@ class TriGraph(object):
         if mode == 'all':
             triplets = self.triplets
         elif mode == 'train':
-            triplets = self.train
+            triplets = self._train
         else:
             raise ValueError('Invalid mode to count true tails for (head, rel) pair.')
         true_pairs = defaultdict(set)
@@ -208,7 +222,6 @@ class TriGraph(object):
             true_pairs[k] = np.array(list(v), dtype='int32')
         return true_pairs
 
-    @property
     def true_heads_for_tail_rel(self, mode='all'):
         """
         Get valid head entities for a pair of (tail, relation) in KGs.
@@ -224,7 +237,7 @@ class TriGraph(object):
         if mode == 'all':
             triplets = self.triplets
         elif mode == 'train':
-            triplets = self.train
+            triplets = self._train
         else:
             raise ValueError('Invalid mode to count true heads for (tail, rel) pair')
         true_pairs = defaultdict(set)
@@ -327,6 +340,24 @@ class TriGraph(object):
             [self._test['h'], self._test['r'], self._test['t']],
             axis=1) if self._test is not None and self._test[
                 'mode'] != 'wikikg90m' else None
+        unempty = [x for x in [self._train, valid, test] if x is not None]
+        return np.concatenate(unempty, axis=0)
+
+    @property
+    def cls_triplets(self):
+        """All existing triplets for classification (np.ndarray).
+        """
+        def create_cls_data(data):
+            cls_data = None
+            if data is not None and data['mode'] != 'wikikg90m':
+                cls_data = np.stack([
+                    np.concatenate([data['h'], data['t']]),
+                    np.concatenate([data['r'], data['r'] + self._num_rels // 2]),
+                    np.concatenate([data['t'], data['h']])], axis=1)
+            return cls_data
+
+        valid = create_cls_data(self._valid)
+        test = create_cls_data(self._test)
         unempty = [x for x in [self._train, valid, test] if x is not None]
         return np.concatenate(unempty, axis=0)
 

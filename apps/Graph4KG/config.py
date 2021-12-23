@@ -344,7 +344,13 @@ class KGEArgParser(ArgumentParser):
             '--feat_h',
             type=int,
             default=10,
-            help='The height of reshaped input embeddings om ConvE.')
+            help='The height of reshaped input embeddings in ConvE.')
+
+        self.model_group.add_argument(
+            '--label_smoothing',
+            type=float,
+            default=0.1,
+            help='Label smoothing parameter for loss calculation in ConvE.')
 
         self.train_group = self.add_argument_group('train optional')
         self.train_group.add_argument(

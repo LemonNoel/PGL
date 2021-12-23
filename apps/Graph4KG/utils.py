@@ -119,7 +119,7 @@ def calculate_metrics(scores, corr_idxs, filter_list):
     logs = []
     for i in range(scores.shape[0]):
         rank = (scores[i] > scores[i][corr_idxs[i]]).astype('float32')
-        if filter_list is not None:
+        if filter_list is not None and len(filter_list[i]) > 0:
             mask = paddle.ones(rank.shape, dtype='float32')
             mask[filter_list[i]] = 0.
             rank = rank * mask
@@ -214,17 +214,17 @@ def evaluate(model,
                     h_score = model.predict(t, r, mode='head')
                 elif data_mode == 'cls':
                     t_score = model.predict(h, r, mode='tail_cls')
-                    h_score = model.predict(t, r, mode='head_cls')
+                    h_score = model.predict(t, r + model._num_rels // 2, mode='head_cls')
                 else:
                     raise ValueError('Invalid evaluation mode {}'.format(data_mode))
 
                 if filter_dict is not None:
                     h_filter_list = [
-                        filter_dict['head'][(ti, ri)]
-                        for ti, ri in zip(t.numpy(), r.numpy())
+                        filter_dict[(ti, ri)]
+                        for ti, ri in zip(t.numpy(), (r + model._num_rels // 2).numpy())
                     ]
                     t_filter_list = [
-                        filter_dict['tail'][(hi, ri)]
+                        filter_dict[(hi, ri)]
                         for hi, ri in zip(h.numpy(), r.numpy())
                     ]
                 else:

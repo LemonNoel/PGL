@@ -100,6 +100,7 @@ class KGEModel(nn.Layer):
             self.ent_embedding.train()
         if self._rel_emb_on_cpu:
             self.rel_embedding.train()
+        self._score_func.train()
 
     def set_eval_mode(self):
         """Set eval mode: tensor.stop_gradient=True.
@@ -108,6 +109,7 @@ class KGEModel(nn.Layer):
             self.ent_embedding.eval()
         if self._rel_emb_on_cpu:
             self.rel_embedding.eval()
+        self._score_func.eval()
 
     def prepare_inputs(self,
                        indexs,
@@ -252,10 +254,7 @@ class KGEModel(nn.Layer):
             scores = paddle.squeeze(scores, axis=1)
 
         elif mode in {'head_cls', 'tail_cls'}:
-            if mode == 'tail_cls':
-                rel_emb = self._get_rel_embedding(rel + self._num_rels)
-            else:
-                rel_emb = self._get_rel_embedding(rel)
+            rel_emb = self._get_rel_embedding(rel)
             scores = self._score_func(ent_emb, rel_emb, cand_emb)
 
         return scores

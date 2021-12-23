@@ -75,17 +75,9 @@ class KGCLSDataset(Dataset):
         use_symmetry (bool):
             Whether add symmetric triplets to training dataset.
     """
-    def __init__(self,
-                 trigraph,
-                 use_symmetry):
+    def __init__(self, trigraph):
         self._num_ents = trigraph.num_ents
-        if use_symmetry:
-            trigraph.add_symmetric_train_triplets()
-
-        self._data = {}
-        self._data.update(trigraph.true_tails_for_head_rel)
-        self._data.update(trigraph.true_heads_for_tail_rel)
-        self._data = list(self._data.items())
+        self._data = list(trigraph.true_tails_for_head_rel(mode='train').items())
 
     def __len__(self):
         return len(self._data)
@@ -335,7 +327,7 @@ def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None, m
     """Construct DataLoader for training, validation and test.
     """
     if mode == 'cls':
-        train_dataset = KGCLSDataset(trigraph, args.use_symmetry)
+        train_dataset = KGCLSDataset(trigraph)
         train_loader = DataLoader(
             dataset=train_dataset,
             batch_size=args.batch_size,

@@ -501,7 +501,7 @@ class ConvEScore(nn.Layer):
         self.conv_net = nn.Conv2D(
                             args.in_channels,
                             args.out_channels,
-                            (args.kernel_size, args.kernel_size),
+                            args.kernel_size,
                             args.stride,
                             args.padding)
         self.bn0 = nn.BatchNorm2D(args.in_channels)
