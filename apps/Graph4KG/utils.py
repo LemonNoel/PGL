@@ -188,6 +188,36 @@ def evaluate_wikikg90m(model, loader, mode, save_path):
                 input_dict=input_dict, dir_path=save_path)
 
 
+def evaluate_wikikg90mv2(model, loader, mode, save_path):
+    from ogb.lsc import WikiKG90Mv2Evaluator
+    evaluator = WikiKG90Mv2Evaluator()
+    model.eval()
+    with paddle.no_grad():
+        top_tens = []
+        corr_idx = []
+        for h, r, t_idx, cand_t in tqdm(loader):
+            score = model.predict(h, r, cand_t)
+            rank = paddle.argsort(score, axis=1, descending=True)
+            top_tens.append(rank[:, :10].numpy())
+            corr_idx.append(t_idx.numpy())
+        t_pred_top10 = np.concatenate(top_tens, axis=0)
+        t_correct_index = np.concatenate(corr_idx, axis=0)
+        input_dict = {}
+        if mode == 'valid':
+            input_dict['h,r->t'] = {
+                't_pred_top10': t_pred_top10,
+                't': t_correct_index
+            }
+            result = evaluator.eval(input_dict)
+            logging.info('-- %s results -------------' % mode)
+            logging.info(' '.join(
+                ['{}: {}'.format(k, v) for k, v in result.items()]))
+        else:
+            input_dict['h,r->t'] = {'t_pred_top10': t_pred_top10}
+            evaluator.save_test_submission(
+                input_dict=input_dict, dir_path=save_path)
+
+
 @timer_wrapper('evaluation')
 def evaluate(model,
              loader,
@@ -201,6 +231,8 @@ def evaluate(model,
         evaluate_wikikg2(model, loader, evaluate_mode, save_path)
     elif data_mode == 'wikikg90m':
         evaluate_wikikg90m(model, loader, evaluate_mode, save_path)
+    elif data_mode == 'wikikg90mv2':
+        evaluate_wikikg90mv2(model, loader, evaluate_mode, save_path)
     else:
         model.eval()
         with paddle.no_grad():

@@ -44,6 +44,12 @@ class KGEArgParser(ArgumentParser):
             help='Directory of knowledge graph dataset.')
 
         self.basic_group.add_argument(
+            '--candidate_path',
+            type=str,
+            default='./data/',
+            help='Directory of preprocessed candidates.')
+
+        self.basic_group.add_argument(
             '--save_path',
             type=str,
             default='./output/',
@@ -60,7 +66,8 @@ class KGEArgParser(ArgumentParser):
             type=str,
             default='FB15k',
             choices=[
-                'FB15k', 'FB15k-237', 'wn18', 'WN18RR', 'wikikg2', 'wikikg90m'
+                'FB15k', 'FB15k-237', 'wn18', 'WN18RR', 'wikikg2', 'wikikg90m',
+                'wikikg90mv2'
             ],
             help='Dataset name.')
 

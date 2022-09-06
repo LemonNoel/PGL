@@ -250,6 +250,41 @@ class WikiKG90MDataset(object):
         self.rel_feat = data.relation_feat
 
 
+class WikiKG90Mv2Dataset(object):
+    """Load WikiKG90Mv2 from files.
+    """
+
+    def __init__(self, path):
+        super(WikiKG90Mv2Dataset, self).__init__()
+        self.name = 'WikiKG90Mv2'
+        try:
+            from ogb.lsc import WikiKG90Mv2Dataset as LSCDataset
+        except ImportError as error:
+            print(
+                'Please run ``pip install ogb>=1.3.2`` to load WikiKG90M dataset.'
+            )
+            raise ImportError(error)
+        data =  LSCDataset(root=path)
+        self.triplets = {
+            'train': data.train_hrt,
+            'valid': {
+                'mode': 'wikikg90mv2',
+                'h': data.valid_dict['h,r->t']['hr'][:, 0],
+                'r': data.valid_dict['h,r->t']['hr'][:, 1],
+                't': data.valid_dict['h,r->t']['t']
+            },
+            'test': {
+                'mode': 'wikikg90mv2',
+                 'h': data.valid_dict['h,r->t']['hr'][:, 0], 
+                 'r': data.valid_dict['h,r->t']['hr'][:, 1]
+            }
+        }
+        self.num_ents = data.num_entities
+        self.num_rels = data.num_relations
+        self.ent_feat = data.entity_feat
+        self.rel_feat = data.relation_feat 
+
+
 class WikiKG2Dataset(object):
     """Load OGBL-WikiKG2 from files.
     """
@@ -301,6 +336,8 @@ def read_trigraph(data_path, data_name, use_dict, kv_mode):
     """
     if data_name == "wikikg90m":
         dataset = WikiKG90MDataset(data_path)
+    elif data_name == "wikikg90mv2":
+        dataset = WikiKG90Mv2Dataset(data_path)
     elif data_name == 'wikikg2':
         dataset = WikiKG2Dataset(data_path)
     elif data_name in ['FB15k-237', 'WN18RR', 'FB15k', 'wn18']:

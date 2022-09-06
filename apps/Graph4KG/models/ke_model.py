@@ -271,7 +271,7 @@ class KGEModel(nn.Layer):
         if not self._rel_emb_on_cpu:
             paddle.save(self.rel_embedding.state_dict(),
                         os.path.join(save_path, 'rel_embeds.pdparams'))
-        if self._use_feat:
+        if False and self._use_feat:
             paddle.save(self.trans_ent.state_dict(),
                         os.path.join(save_path, 'trans_ents.pdparams'))
             paddle.save(self.trans_rel.state_dict(),

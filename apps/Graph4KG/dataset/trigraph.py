@@ -93,7 +93,7 @@ class TriGraph(object):
             """
             if isinstance(data, dict):
                 ents.append(np.unique(data['h']))
-                if data['mode'] is not 'wikikg90m':
+                if data['mode'] != 'wikikg90m':
                     ents.append(np.unique(data['t']))
                 else:
                     ents.append(np.unique(data['t_candidate'].reshape((-1, ))))
