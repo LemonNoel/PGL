@@ -60,7 +60,8 @@ class KGEArgParser(ArgumentParser):
             type=str,
             default='FB15k',
             choices=[
-                'FB15k', 'FB15k-237', 'wn18', 'WN18RR', 'wikikg2', 'wikikg90m'
+                'FB15k', 'FB15k-237', 'wn18', 'WN18RR', 'wikikg2', 'wikikg90m',
+                'wikikg90mv2'
             ],
             help='Dataset name.')
 

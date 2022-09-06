@@ -297,6 +297,28 @@ class TestWikiKG90M(Dataset):
             return h, r, -1, neg_tail
 
 
+class TestWikiKG90Mv2(Dataset):
+    """
+    Dataset for test data in WikiKG90Mv2
+    """
+
+    def __init__(self, triplets, candidate_path=None):
+        self._h = triplets['h']
+        self._r = triplets['r']
+        self._t = triplets.get('t', None)
+        self._candidate = json.load(open(candidate_path, 'r')) # TODO how to load candidate
+
+    def __len__(self):
+        return self._h.shape[0]
+
+    def __getitem__(self, index):
+        h = self._h[index]
+        r = self._r[index]
+        t = self._t[index] if self._t else -1
+        neg_tail = self._candidate[(h, r)] # TODO how to get candidate 
+        return h, r, t, neg_tail
+           
+        
 def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None):
     """Construct DataLoader for training, validation and test.
     """
@@ -322,6 +344,8 @@ def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None):
     if args.valid:
         if args.data_name == 'wikikg90m':
             valid_dataset = TestWikiKG90M(trigraph.valid_dict)
+        elif args.data_name == 'wikikg90mv2':
+            valid_dataset = TestWikiKG90Mv2(trigraph.valid_dict, args.candidate_path)
         elif args.data_name == 'wikikg2':
             valid_dataset = TestWikiKG2(trigraph.valid_dict)
         else:
@@ -335,6 +359,8 @@ def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None):
     if args.test:
         if args.data_name == 'wikikg90m':
             test_dataset = TestWikiKG90M(trigraph.test_dict)
+        elif args.data_name == 'wikikg90mv2':
+            test_dataset = TestWikiKG90Mv2(trigraph.test_dict, args.candidate_path)
         elif args.data_name == 'wikikg2':
             test_dataset = TestWikiKG2(trigraph.test_dict)
         else:
