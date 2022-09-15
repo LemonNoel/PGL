@@ -215,7 +215,7 @@ def evaluate_wikikg90mv2(model, loader, mode, save_path):
         else:
             input_dict['h,r->t'] = {'t_pred_top10': t_pred_top10}
             evaluator.save_test_submission(
-                input_dict=input_dict, dir_path=save_path)
+                input_dict=input_dict, dir_path=save_path, mode = 'test-dev')
 
 
 @timer_wrapper('evaluation')
