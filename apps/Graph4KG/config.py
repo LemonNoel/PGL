@@ -44,6 +44,12 @@ class KGEArgParser(ArgumentParser):
             help='Directory of knowledge graph dataset.')
 
         self.basic_group.add_argument(
+            '--candidate_path',
+            type=str,
+            default=None,
+            help='Directory of the tail candidates in evaluation set.')
+
+        self.basic_group.add_argument(
             '--save_path',
             type=str,
             default='./output/',

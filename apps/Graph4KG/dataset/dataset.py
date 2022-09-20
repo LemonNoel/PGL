@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import json
 
 import numpy as np
 from numpy.random import default_rng
@@ -306,7 +307,7 @@ class TestWikiKG90Mv2(Dataset):
         self._h = triplets['h']
         self._r = triplets['r']
         self._t = triplets.get('t', None)
-        self._candidate = json.load(open(candidate_path, 'r')) # TODO how to load candidate
+        self._candidate = json.load(open(candidate_path, 'r'))
 
     def __len__(self):
         return self._h.shape[0]
@@ -314,10 +315,11 @@ class TestWikiKG90Mv2(Dataset):
     def __getitem__(self, index):
         h = self._h[index]
         r = self._r[index]
-        t = self._t[index] if self._t else -1
-        neg_tail = self._candidate[(h, r)] # TODO how to get candidate 
+        t = self._t[index] if self._t is not None else -1
+        neg_tail = self._candidate[index]
+        neg_tail = np.concatenate([neg_tail, [t,]], axis=0) if t > -1 else neg_tail
         return h, r, t, neg_tail
-           
+
         
 def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None):
     """Construct DataLoader for training, validation and test.
