@@ -316,10 +316,8 @@ class TestWikiKG90Mv2(Dataset):
         h = self._h[index]
         r = self._r[index]
         t = self._t[index] if self._t is not None else -1
-        neg_tail = self._candidate[index]
-        neg_tail = np.concatenate([neg_tail, [t,]], axis=0) if t > -1 else neg_tail
+        neg_tail = np.array(self._candidate[index])
         return h, r, t, neg_tail
-
         
 def create_dataloaders(trigraph, args, filter_dict=None, shared_ent_path=None):
     """Construct DataLoader for training, validation and test.

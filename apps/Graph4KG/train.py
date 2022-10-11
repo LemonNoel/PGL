@@ -187,7 +187,9 @@ def main():
 
             step += 1
             if args.save_interval > 0 and step % args.save_interval == 0:
-                model.save(args.step_path)
+                print("Saving model...")
+                model.save(args.save_path)
+                print("Done.")
             if step >= args.max_steps:
                 stop = True
                 break

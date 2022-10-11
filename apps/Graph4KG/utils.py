@@ -197,6 +197,7 @@ def evaluate_wikikg90mv2(model, loader, mode, save_path):
         for h, r, t_idx, cand_t in tqdm(loader):
             score = model.predict(h, r, cand_t)
             rank = paddle.argsort(score, axis=1, descending=True)
+            rank = paddle.stack([cand[r] for r, cand in zip(rank, cand_t)])
             top_tens.append(rank[:, :10].numpy())
             corr_idx.append(t_idx.numpy())
         t_pred_top10 = np.concatenate(top_tens, axis=0)
@@ -216,6 +217,7 @@ def evaluate_wikikg90mv2(model, loader, mode, save_path):
             evaluator.save_test_submission(
                 input_dict=input_dict, dir_path=save_path, mode = 'test-dev')
 
+
 @timer_wrapper('evaluation')
 def evaluate(model,
              loader,
@@ -230,6 +232,7 @@ def evaluate(model,
     elif data_mode == 'wikikg90m':
         evaluate_wikikg90m(model, loader, evaluate_mode, save_path)
     elif data_mode == 'wikikg90mv2':
+        logging.info("Use wikikg90mv2")
         evaluate_wikikg90mv2(model, loader, evaluate_mode, save_path)
     else:
         model.eval()

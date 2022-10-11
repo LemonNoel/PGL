@@ -276,13 +276,14 @@ class WikiKG90Mv2Dataset(object):
             'test': {
                 'mode': 'wikikg90mv2',
                  'h': data.valid_dict['h,r->t']['hr'][:, 0], 
-                 'r': data.valid_dict['h,r->t']['hr'][:, 1]
+                 'r': data.valid_dict['h,r->t']['hr'][:, 1],
+                 't': data.valid_dict['h,r->t']['t']
             }
         }
         self.num_ents = data.num_entities
         self.num_rels = data.num_relations
-        self.ent_feat = data.num_feat_dims
-        self.rel_feat = data.num_feat_dims 
+        self.ent_feat = data.entity_feat
+        self.rel_feat = data.relation_feat 
 
 
 class WikiKG2Dataset(object):
