@@ -46,8 +46,14 @@ class KGEArgParser(ArgumentParser):
         self.basic_group.add_argument(
             '--candidate_path',
             type=str,
-            default='./data/',
-            help='Directory of preprocessed candidates.')
+            default=None,
+            help='Directory of the tail candidates in evaluation set.')
+
+        self.basic_group.add_argument(
+            '--test_candidate_path',
+            type=str,
+            default=None,
+            help='Directory of the tail candidates in evaluation set.')
 
         self.basic_group.add_argument(
             '--save_path',
@@ -192,7 +198,7 @@ class KGEArgParser(ArgumentParser):
         self.data_group.add_argument(
             '--num_workers',
             type=int,
-            default=0,
+            default=8,
             help='Number of workers used to load batch data.')
 
         self.data_group.add_argument(

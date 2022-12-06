@@ -322,9 +322,10 @@ class SharedEmbedding(object):
 
     def _init_moment(self):
         if dist.get_rank() == 0:
-            moment = np.zeros((self.weight.shape[0], ), dtype=np.float32)
-            np.save(self._moment_path, moment)
-            del moment
+            if self._init_mode != 'file':
+                moment = np.zeros((self.weight.shape[0], ), dtype=np.float32)
+                np.save(self._moment_path, moment)
+                del moment
         else:
             while True:
                 if os.path.exists(self._moment_path):

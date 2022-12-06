@@ -241,7 +241,11 @@ class KGEModel(nn.Layer):
             cand_emb = cand_emb.tile([ent.shape[0], 1, 1])
         else:
             num_cand = cand.shape[1]
-            cand_emb = self._get_ent_embedding(cand.reshape([-1, ]))
+            if isinstance(cand, paddle.Tensor):
+                cand = cand.reshape([-1])
+            else:
+                cand = cand.reshape(-1)
+            cand_emb = self._get_ent_embedding(cand)
             cand_emb = cand_emb.reshape([-1, num_cand, self._ent_dim])
 
         ent_emb = self._get_ent_embedding(ent)
@@ -271,7 +275,7 @@ class KGEModel(nn.Layer):
         if not self._rel_emb_on_cpu:
             paddle.save(self.rel_embedding.state_dict(),
                         os.path.join(save_path, 'rel_embeds.pdparams'))
-        if False and self._use_feat:
+        if self._use_feat:
             paddle.save(self.trans_ent.state_dict(),
                         os.path.join(save_path, 'trans_ents.pdparams'))
             paddle.save(self.trans_rel.state_dict(),
@@ -350,6 +354,45 @@ class KGEModel(nn.Layer):
         return emb
 
     def _init_embedding(self):
+
+        if self._args.init_from_ckpt is not None:
+            ent_path = os.path.join(self._args.init_from_ckpt, '__ent_embedding.npy')
+            rel_path = os.path.join(self._args.init_from_ckpt, '__rel_embedding.npy')
+            param_path = os.path.join(self._args.init_from_ckpt, 'params.pdparams')
+            if not os.path.exists(ent_path) or not os.path.exists(rel_path):
+                if not os.path.exists(param_path):
+                    raise ValueError("There is no params.pdparams in %s" % (
+                        self._args.init_from_ckpt))
+                params = paddle.load(param_path)
+            if os.path.exists(ent_path):
+                 ent_embeds = SharedEmbedding.from_file(
+                    weight_path=ent_path,
+                    optimizer=self._optim,
+                    learning_rate=self._lr,
+                    num_workers=self._args.num_process)
+            else:
+                if "ent_embedding.weight" not in params:
+                    raise ValueError("Can not load entity embeddings from %s"
+                        % (self._args.init_from_ckpt))
+                ent_weight = params["ent_embedding.weight"]
+                ent_embeds = nn.Embedding(self._num_ents, self._ent_dim)
+                ent_embeds.weight.set_value(ent_weight)
+
+            if os.path.exists(rel_path):
+                rel_embeds = SharedEmbedding.from_file(
+                    weight_path=rel_path,
+                    optimizer=self._optim,
+                    learning_rate=self._lr,
+                    num_workers=self._args.num_process)
+            else:
+                if "rel_embedding.weight" not in params:
+                    raise ValueError("Can not load relation embeddings from %s"
+                        % (self._args.init_from_ckpt))
+                else:
+                    rel_weight = params["rel_embedding.weight"]
+                rel_embeds = nn.Embedding(self._num_rels, self._rel_dim)
+                rel_embeds.weight.set_value(rel_weight)
+            return ent_embeds, rel_embeds
 
         if self._model_name == 'quate':
             ent_weight = self._init_func('quaternion_init', self._num_ents,
